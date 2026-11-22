@@ -9,6 +9,63 @@ const generateToken = (id) => {
   });
 };
 
+// Google One-Tap / OAuth Sign-in & Sign-up Handler
+export const googleAuth = async (req, res, next) => {
+  try {
+    const { email, name, googleId, avatar } = req.body;
+
+    if (!email) {
+      return ApiResponse.error(res, 'Email is required from Google', 400);
+    }
+
+    let user = await User.findOne({
+      $or: [
+        ...(googleId ? [{ googleId }] : []),
+        { email: email.toLowerCase() },
+      ],
+    });
+
+    if (!user) {
+      // Create new user via Google Sign-up
+      user = await User.create({
+        name: name || email.split('@')[0],
+        email: email.toLowerCase(),
+        googleId,
+        avatar: avatar || '',
+        authProvider: 'google',
+      });
+    } else {
+      // If user already exists, attach googleId if not present
+      if (googleId && !user.googleId) {
+        user.googleId = googleId;
+        user.authProvider = 'google';
+        if (avatar && !user.avatar) user.avatar = avatar;
+        await user.save();
+      }
+    }
+
+    const token = generateToken(user._id);
+
+    return ApiResponse.success(
+      res,
+      'Google authentication successful',
+      {
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          avatar: user.avatar,
+          role: user.role,
+        },
+        token,
+      },
+      200
+    );
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const register = async (req, res, next) => {
   try {
     const { name, email, password, phone } = req.body;
@@ -27,6 +84,7 @@ export const register = async (req, res, next) => {
       email,
       password,
       phone,
+      authProvider: 'local',
     });
 
     const token = generateToken(user._id);
